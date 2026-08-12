@@ -48,10 +48,30 @@
       color: #999;
       padding-left: 16px;
     }
+    .controls {
+      max-width: 720px;
+      margin: 12px auto 0;
+      text-align: right;
+    }
+    #clearBtn {
+      font: inherit;
+      padding: 8px 16px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      background: #fff;
+      color: #333;
+      cursor: pointer;
+    }
+    #clearBtn:hover {
+      background: #f0f0f0;
+    }
   </style>
 </head>
 <body>
   <div id="logs"><div class="empty">Загрузка...</div></div>
+  <div class="controls">
+    <button id="clearBtn">Очистить лог</button>
+  </div>
   <script>
     const logsEl = document.getElementById('logs');
     const MAX_ENTRIES = 100;
@@ -82,7 +102,23 @@
       return html;
     }
 
+    function showNoLogs() {
+      logsEl.innerHTML = '<div class="empty">Логов пока нет.<br>Для добавления сделайте запрос: GET /log с любыми параметрами</div>';
+    }
+
+    function showCleared() {
+      logsEl.innerHTML = '<div class="empty">Лог очищен</div>';
+    }
+
+    function clearLogs() {
+      showCleared();
+    }
+
     function appendEntry(entry) {
+      const clearedMsg = logsEl.querySelector('.empty');
+      if (clearedMsg && logsEl.children.length === 1) {
+        clearedMsg.remove();
+      }
       logsEl.insertAdjacentHTML('beforeend', entryToHtml(entry));
       while (logsEl.children.length > MAX_ENTRIES) {
         logsEl.removeChild(logsEl.firstChild);
@@ -94,19 +130,33 @@
     fetch('/api/logs')
       .then((r) => r.json())
       .then((entries) => {
-        logsEl.innerHTML = entries.map(entryToHtml).join('');
-        logsEl.scrollTop = logsEl.scrollHeight;
+        if (entries.length === 0) {
+          showNoLogs();
+        } else {
+          logsEl.innerHTML = entries.map(entryToHtml).join('');
+          logsEl.scrollTop = logsEl.scrollHeight;
+        }
       })
       .catch(() => {
         logsEl.innerHTML = '<div class="empty">Не удалось загрузить лог</div>';
       });
 
-    // WebSocket — новые записи в реальном времени
+    // Кнопка очистки лога
+    document.getElementById('clearBtn').addEventListener('click', () => {
+      fetch('/clear').catch(() => {});
+    });
+
+    // WebSocket — новые записи и события в реальном времени
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const ws = new WebSocket(`${proto}://${location.host}`);
     ws.onmessage = (e) => {
       try {
-        appendEntry(JSON.parse(e.data));
+        const data = JSON.parse(e.data);
+        if (data.type === 'clear') {
+          clearLogs();
+        } else {
+          appendEntry(data);
+        }
       } catch (err) {
         // игнорируем некорректные сообщения
       }

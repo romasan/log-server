@@ -64,6 +64,13 @@ app.get('/api/logs', (req, res) => {
   res.json(logs.slice(-100));
 });
 
+// Очистка лога
+app.get('/clear', (req, res) => {
+  logs.length = 0;
+  broadcast({ type: 'clear' });
+  res.json({ status: 'ok', count: 0 });
+});
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Сервер запущен: http://localhost:${PORT}`);
