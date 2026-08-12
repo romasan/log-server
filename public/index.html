@@ -12,6 +12,40 @@
       background: #f5f5f5;
       color: #333;
     }
+    .filter {
+      max-width: 720px;
+      margin: 0 auto 12px;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 12px 16px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    #filterMode {
+      font: inherit;
+      padding: 6px 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      background: #fff;
+      color: #333;
+      cursor: pointer;
+    }
+    #filterInput {
+      flex: 1;
+      font: inherit;
+      padding: 6px 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      background: #fff;
+      color: #333;
+    }
+    #filterMode:focus,
+    #filterInput:focus {
+      outline: none;
+      border-color: #0066cc;
+    }
     #logs {
       max-width: 720px;
       margin: 0 auto;
@@ -68,13 +102,28 @@
   </style>
 </head>
 <body>
+  <div class="filter">
+    <select id="filterMode">
+      <option value="ip">по ip</option>
+      <option value="param">по параметру</option>
+    </select>
+    <input type="text" id="filterInput" placeholder="Фильтр по выбранному полю...">
+  </div>
   <div id="logs"><div class="empty">Загрузка...</div></div>
   <div class="controls">
     <button id="clearBtn">Очистить лог</button>
   </div>
   <script>
     const logsEl = document.getElementById('logs');
+    const filterModeEl = document.getElementById('filterMode');
+    const filterInputEl = document.getElementById('filterInput');
     const MAX_ENTRIES = 100;
+
+    let entries = [];
+    let isCleared = false;
+    let filterMode = filterModeEl.value;
+    let filterText = '';
+    let filterTimeout = null;
 
     function escapeHtml(str) {
       return String(str).replace(/[&<>"']/g, (c) => ({
@@ -102,12 +151,39 @@
       return html;
     }
 
-    function showNoLogs() {
-      logsEl.innerHTML = '<div class="empty">Логов пока нет.<br>Для добавления сделайте запрос: GET /log с любыми параметрами</div>';
+    function matchesFilter(entry) {
+      const text = filterText.trim().toLowerCase();
+      if (!text) return true;
+      if (filterMode === 'param') {
+        return Object.keys(entry.params || {}).some((key) => key.toLowerCase().includes(text));
+      }
+      return String(entry.ip || '').toLowerCase().includes(text);
+    }
+
+    function render(scrollToBottom) {
+      if (entries.length === 0) {
+        if (isCleared) {
+          logsEl.innerHTML = '<div class="empty">Лог очищен</div>';
+        } else {
+          logsEl.innerHTML = '<div class="empty">Логов пока нет.<br>Для добавления сделайте запрос: GET /log с любыми параметрами</div>';
+        }
+        return;
+      }
+      const filtered = entries.filter(matchesFilter);
+      if (filtered.length === 0) {
+        logsEl.innerHTML = '<div class="empty">Ничего не найдено</div>';
+        return;
+      }
+      logsEl.innerHTML = filtered.map(entryToHtml).join('');
+      if (scrollToBottom) {
+        logsEl.scrollTop = logsEl.scrollHeight;
+      }
     }
 
     function showCleared() {
-      logsEl.innerHTML = '<div class="empty">Лог очищен</div>';
+      entries = [];
+      isCleared = true;
+      render(false);
     }
 
     function clearLogs() {
@@ -115,27 +191,33 @@
     }
 
     function appendEntry(entry) {
-      const clearedMsg = logsEl.querySelector('.empty');
-      if (clearedMsg && logsEl.children.length === 1) {
-        clearedMsg.remove();
+      isCleared = false;
+      entries.push(entry);
+      if (entries.length > MAX_ENTRIES) {
+        entries.shift();
       }
-      logsEl.insertAdjacentHTML('beforeend', entryToHtml(entry));
-      while (logsEl.children.length > MAX_ENTRIES) {
-        logsEl.removeChild(logsEl.firstChild);
-      }
-      logsEl.scrollTop = logsEl.scrollHeight;
+      render(true);
     }
+
+    // Фильтрация с дебаунсом
+    function applyFilter() {
+      clearTimeout(filterTimeout);
+      filterTimeout = setTimeout(() => {
+        filterMode = filterModeEl.value;
+        filterText = filterInputEl.value;
+        render(false);
+      }, 200);
+    }
+
+    filterModeEl.addEventListener('change', applyFilter);
+    filterInputEl.addEventListener('input', applyFilter);
 
     // Загружаем последние 100 записей
     fetch('/api/logs')
       .then((r) => r.json())
-      .then((entries) => {
-        if (entries.length === 0) {
-          showNoLogs();
-        } else {
-          logsEl.innerHTML = entries.map(entryToHtml).join('');
-          logsEl.scrollTop = logsEl.scrollHeight;
-        }
+      .then((data) => {
+        entries = data.slice(0, MAX_ENTRIES);
+        render(true);
       })
       .catch(() => {
         logsEl.innerHTML = '<div class="empty">Не удалось загрузить лог</div>';
